@@ -90,37 +90,59 @@ void handleRedirection(char *args[MAX_ARGS], char *envp[]){
     // store the index of redirection operator if found, set to -1 for default value, meaning not found
     int redirectionIndex = -1;
 
+    int redirectionFlag = -1; // flag: 0 for '>', 1 for '<'
+
     // iterate through args array to find redirection operator, '>
     for(int i = 0; args[i]!= NULL; i++){
         if(strcmp(args[i], ">") == 0){
             redirectionIndex = i;
+            redirectionFlag = 0;
+            break;
+        }
+        else if(strcmp(args[i], "<") == 0){
+            redirectionIndex = i;
+            redirectionFlag = 1;
+            break;
         }
     }
-
+    char *file = NULL; // store file path that were reading from or writing to
     if(redirectionIndex >= 0){ //redirection operator was found
+
         // the next arg after redirection operator should be the destination file
-        char *destination = args[redirectionIndex + 1];
-        if (destination == NULL) { // user didnt type a destination file after redirection char
-            print("No destination file provided for redirection\n");
-            _exit(1);
-        }
+        file = args[redirectionIndex + 1];
 
-        // remove the redirection operator and the destination from the arguments
+        // remove the redirection operator and the file from the arguments
         args[redirectionIndex] = NULL; // null terminate the args array 
-
-        // Close stdout (fd 1)
-        close(1);
-        // open the destination file with write permissions, create it if necessary, and overwrite if necessary
-        // Since fd 1 is closed, open() should assign the lowest available fd (which will be 1)
-        int destFd = open(destination, O_CREAT|O_WRONLY|O_TRUNC, S_IRWXU);
-  
-        if (destFd < 0) {
-            print("Failed to open destination file for redirection\n");
+        if (file == NULL) {
+            print("No file provided for redirection\n");
             _exit(1);
         }
 
-        // Execute the command after setting up redirection.
+        if(redirectionFlag==0){ // redirection operator is '>'
+            close(1); // close stdout (fd 1)
+
+            // open the file with write permissions, create it if necessary, and overwrite if necessary
+            // Since fd 1 is closed, open() should assign the lowest available fd (which will be 1)
+            int fd = open(file, O_CREAT|O_WRONLY|O_TRUNC, S_IRWXU);
+            if (fd < 0) {
+                print("Failed to open destination file for redirection\n");
+                _exit(1);
+            }
+        }
+        else{ // redirection flag is '<'
+            close(0); // close stdin (fd 0)
+            int fd = open(file, O_RDONLY); // open the file for reading
+            if (fd < 0) {
+                print("Failed to open file for input redirection\n");
+                _exit(1);
+            }
+
+        }
+
+        // execute the command after setting up redirection
         executeCommand(args, envp);
+
+        
         
 
     }
