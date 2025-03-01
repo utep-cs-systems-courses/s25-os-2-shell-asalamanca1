@@ -13,6 +13,23 @@
     // - explain the difference between using exit() and _exit(), explain why exit() terminates ur shell after running python program and why _exit() doesnt terminate ur shell
 
 
+
+
+
+
+
+
+
+
+
+// TESTING COMMANDS:
+    // python demos/p1-fork.py
+    // python demos/p1-fork.py > demos/test.txt
+    // wc < demos/test.txt
+    // grep I demos/hi.txt | sort
+
+
+
 // write a string to stdout using write()
 void print(const char *str) {
     write(STDOUT_FILENO, str, strlen(str));
@@ -92,7 +109,7 @@ void handleRedirection(char *args[MAX_ARGS], char *envp[]){
 
     int redirectionFlag = -1; // flag: 0 for '>', 1 for '<'
 
-    // iterate through args array to find redirection operator, '>
+    // iterate through args array to find redirection operator, '>'
     for(int i = 0; args[i]!= NULL; i++){
         if(strcmp(args[i], ">") == 0){
             redirectionIndex = i;
@@ -117,7 +134,7 @@ void handleRedirection(char *args[MAX_ARGS], char *envp[]){
             print("No file provided for redirection\n");
             _exit(1);
         }
-
+        
         if(redirectionFlag==0){ // redirection operator is '>'
             close(1); // close stdout (fd 1)
 
@@ -136,17 +153,96 @@ void handleRedirection(char *args[MAX_ARGS], char *envp[]){
                 print("Failed to open file for input redirection\n");
                 _exit(1);
             }
-
         }
 
         // execute the command after setting up redirection
         executeCommand(args, envp);
-
-        
-        
-
     }
 }
+
+void handlePipe(char *args[MAX_ARGS], char *envp[]){
+    // store the index of pipe operator if found, set to -1 for default value, meaning not found
+    int pipeIndex = -1;
+    // iterate through args array to find pipe operator, '|'
+    for(int i = 0; args[i]!= NULL; i++){
+        if(strcmp(args[i], "|") == 0){
+            pipeIndex = i;
+            break;
+        }
+    }
+    // no pipe operator found, execute normally
+    if (pipeIndex == -1) {
+        executeCommand(args, envp);
+        return;
+    }
+    char *rightCommand[MAX_ARGS]; // right side of pipe
+    char *leftCommand[MAX_ARGS]; // left side of pipe
+
+    // copy tokens for the left command (everything before '|')
+    int i; // i will be used to iterate through args
+    for (i = 0; i < pipeIndex; i++){
+        leftCommand[i] = args[i];
+    }
+    leftCommand[i] = NULL; // null terminate the left command array
+
+    // copy tokens for the right command (everything after '|')
+    int j = 0; // index to iterate through indexes of right cmd
+    for(int i = pipeIndex + 1; args[i]!= NULL; i++){ // i will iterate through args
+        rightCommand[j++] = args[i];
+    }
+    rightCommand[j]=NULL; // null terminate the right command array
+    
+
+    
+    int *pipeFds;
+    pipeFds = (int *) calloc(2, sizeof(int));
+    if (pipe(pipeFds) == -1) {
+        print("Pipe failed\n");
+        _exit(1);
+    }
+
+    int leftCmdPid;
+    leftCmdPid = fork();
+    if (leftCmdPid < 0) {
+        print("Fork failed for left command\n");
+        _exit(1);
+    }
+
+    if(leftCmdPid == 0){ // child process for left command
+        close(1); // close stdout fd
+        dup(pipeFds[1]); // dup our write fd from pipefds and assign it to fd #1
+        close(pipeFds[0]); close(pipeFds[1]); // close pipefds
+        // output will be ridirected to write fd in pipefds
+        executeCommand(leftCommand, envp); // execute left command
+        exit(2);
+    }
+    
+
+    // fork the second child for the right command
+    int rightCmdPid;
+    rightCmdPid = fork();
+    if (rightCmdPid < 0) {
+        print("Fork failed for right command\n");
+        _exit(1);
+    }
+    
+    if(rightCmdPid == 0){ // child process for left command
+        close(0); // close stdin
+        dup(pipeFds[0]); // dup our read fd from pipefds and assign it to fd #0
+        close(pipeFds[0]); close(pipeFds[1]); // close pipefds
+        // command will now take input from read fd in pipefds
+        executeCommand(rightCommand, envp); // execute left command, output will be ridirected
+        exit(2);
+    }
+   
+    close(pipeFds[0]); close(pipeFds[1]); // close pipefds
+
+    // wait for both children
+    waitpid(leftCmdPid, NULL, 0);
+    waitpid(rightCmdPid, NULL, 0);
+}
+
+
 
 
 int main(int argc, char *argv[], char *envp[]) {
@@ -158,7 +254,7 @@ int main(int argc, char *argv[], char *envp[]) {
 
     // continuously prompt the user for input until they type "exit"
     while (1) {
-        print("DRE'S SHELL: ");  
+        print("ANDRE'S SHELL: ");  
         index = 0; // reset index for the new command input
 
         // read user input one character at a time using read()
@@ -203,29 +299,41 @@ int main(int argc, char *argv[], char *envp[]) {
         }
 
         if (pid == 0) { // child process
-            // check if the command includes redirection
-            int hasRedirection = 0;
-            for (int i = 0; args[i] != NULL; i++) {
-                if (strcmp(args[i], ">") == 0 || strcmp(args[i], "<") == 0) {
-                    hasRedirection = 1;
+            int hasPipe = 0; // store if pipe operator was found
+            // traverse chars in command and look for pipe operator
+            for (int i = 0; args[i] != NULL; i++){
+                if (strcmp(args[i], "|") == 0) {
+                    hasPipe = 1;
                     break;
                 }
             }
-            if (hasRedirection) {
-                // handle redirection if found
-                handleRedirection(args, envp);
+            // if a pipe was found, call handlePipe()
+            if(hasPipe) {
+                handlePipe(args, envp);
             }
-            else{
-                // no redirection, execute command normally
-                executeCommand(args, envp);
-            }
-            // executeCommand(args, envp); // execute command
-
+            else{ // if no pipe was found, look for redirection
+                // check if the command includes redirection
+                int hasRedirection = 0;
+                for (int i = 0; args[i] != NULL; i++) {
+                    if (strcmp(args[i], ">") == 0 || strcmp(args[i], "<") == 0) {
+                        hasRedirection = 1;
+                        break;
+                    }
+                }
+                if (hasRedirection) {
+                    // handle redirection if found
+                    handleRedirection(args, envp);
+                }
+                else{
+                    // no redirection, execute command normally
+                    executeCommand(args, envp);
+                }
+                // executeCommand(args, envp); // execute command
+            }   
         } else { // parent process
             // wait for the child to terminate before printing the next prompt.
             int cp = wait(NULL);
         }
     }
-
     return 0;
 }
