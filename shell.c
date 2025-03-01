@@ -290,6 +290,35 @@ int main(int argc, char *argv[], char *envp[]) {
         }
         args[arg_count] = NULL; // null terminate the arg list
 
+        // if the first argument is a cd command, we'll call chdir() in parent process
+        // we want to stay in the parent process because forking a child would only affect the childs directory
+        if (strcmp(args[0], "cd") == 0) { 
+            char *home = NULL; // string to store the current home directory
+            for (int i = 0; envp[i] != NULL; i++) { // iterate through envp to find "HOME="
+                if (strncmp(envp[i], "HOME=", 5) == 0) {
+                    home = envp[i] + 5; // skip the "HOME=" part
+                    break;
+                }
+            }
+            // if no directory argument is provided, default to HOME from envp
+            if (args[1] == NULL) {
+                if (home == NULL) {
+                    print("cd: HOME not set\n");
+                } else if (chdir(home) != 0) {
+                    print("cd error\n");
+                }
+            } else {
+                // change directory to the path specified by user
+                if (chdir(args[1]) != 0) {
+                    print("cd error, directory does not exist\n");
+                }
+            }
+            // break out of loop and continue to next prompt without forking a child process
+            continue; // skip the fork in code below
+        }
+
+
+
         // fork a child process to execute the command
         pid_t pid = fork();
         if (pid < 0) {
