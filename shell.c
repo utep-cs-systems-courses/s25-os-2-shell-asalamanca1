@@ -360,8 +360,19 @@ int main(int argc, char *argv[], char *envp[]) {
                 // executeCommand(args, envp); // execute command
             }   
         } else { // parent process
-            // wait for the child to terminate before printing the next prompt.
-            int cp = wait(NULL);
+    
+            int waitVal, waitStatus; //store waitpid() returned pid and status
+
+            // wait for the child to terminate before printing the next prompt
+            waitVal = waitpid(pid, &waitStatus, 0); 
+            if(waitVal == pid){
+                int exitCode = WEXITSTATUS(waitStatus);
+                if (exitCode != 0) {
+                    char buffer[128];
+                    snprintf(buffer, sizeof(buffer), "Program terminated with exit code %d.\n", exitCode);
+                    print(buffer);
+                }
+            }
         }
     }
     return 0;
